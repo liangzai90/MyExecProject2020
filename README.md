@@ -22,7 +22,7 @@ https://github.com/open-source-parsers/jsoncpp
    
 build cmd:
 
-  in root project(uWebSocketDemo1),run this command:
+  in root directory (uWebSocketDemo1),run this command:
  - > cmake ./
  - > make 
  
