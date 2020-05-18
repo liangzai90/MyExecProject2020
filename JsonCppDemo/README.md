@@ -3,6 +3,7 @@
     Use it to read, write, parse json string.
 
 build cmd:
+
   in src directory,run this command:
  - > g++ demo1.cpp -I ../include  ./lib_json/libjsoncpp.a -std=c++11
 
