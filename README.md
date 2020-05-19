@@ -8,7 +8,8 @@ build cmd:
  - > g++ demo1.cpp -I ../include  ./lib_json/libjsoncpp.a -std=c++11
 
   However you can rebuild you libjsoncpp.a 
-  in lib_jsoncpp directory, run this command:
+  
+  In lib_jsoncpp directory, run this command:
  - > cmake ./
  - > make 
  
