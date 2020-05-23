@@ -5,7 +5,7 @@ NAME=Demo1
 INC_DIR=-I./include -I./include2
 
 #需要包含的cpp文件目录，不能在目录后面追加多个目录。
-#如果有多个目录，需要像这样分别定义多个SRC_DIRXXX（一般不会有多个src的目录），下面也有一处需要做对应的修改
+#如果有多个cpp文件目录，需要像这样分别定义多个SRC_DIRXXX（一般不会有多个src的目录），下面也有一处需要做对应的修改
 SRC_DIR1=./src/*.cpp
 SRC_DIR2=./src2/*.cpp
 
