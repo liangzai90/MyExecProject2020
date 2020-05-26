@@ -23,6 +23,7 @@
 #include <memory.h>
 #include<unistd.h>
 #include <time.h>
+#include <sys/time.h>
 
 #include "NetMessageType.h"
 

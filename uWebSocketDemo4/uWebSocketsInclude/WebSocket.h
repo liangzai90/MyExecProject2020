@@ -24,201 +24,275 @@
 #include "WebSocketContextData.h"
 
 #include <string_view>
+#include <stdlib.h>
+#include <stdio.h>
 
-namespace uWS {
+namespace uWS
+{
 
-template <bool SSL, bool isServer>
-struct WebSocket : AsyncSocket<SSL> {
-    template <bool> friend struct TemplatedApp;
-private:
-    typedef AsyncSocket<SSL> Super;
+    template <bool SSL, bool isServer>
+    struct WebSocket : AsyncSocket<SSL>
+    {
+        template <bool>
+        friend struct TemplatedApp;
 
-    void *init(bool perMessageDeflate, int compressOptions, std::string &&backpressure) {
-        new (us_socket_ext(SSL, (us_socket_t *) this)) WebSocketData(perMessageDeflate, compressOptions, std::move(backpressure));
-        return this;
-    }
-public:
+    private:
+        typedef AsyncSocket<SSL> Super;
 
-    /* Returns pointer to the per socket user data */
-    void *getUserData() {
-        WebSocketData *webSocketData = (WebSocketData *) us_socket_ext(SSL, (us_socket_t *) this);
-        /* We just have it overallocated by sizeof type */
-        return (webSocketData + 1);
-    }
+        void *init(bool perMessageDeflate, int compressOptions, std::string &&backpressure)
+        {
+            new (us_socket_ext(SSL, (us_socket_t *)this)) WebSocketData(perMessageDeflate, compressOptions, std::move(backpressure));
+            return this;
+        }
 
-    /* See AsyncSocket */
-    using Super::getBufferedAmount;
-    using Super::getRemoteAddress;
+    public:
+        /* Returns pointer to the per socket user data */
+        void *getUserData()
+        {
+            WebSocketData *webSocketData = (WebSocketData *)us_socket_ext(SSL, (us_socket_t *)this);
+            /* We just have it overallocated by sizeof type */
+            return (webSocketData + 1);
+        }
 
-    /* Simple, immediate close of the socket. Emits close event */
-    using Super::close;
+        /* See AsyncSocket */
+        using Super::getBufferedAmount;
+        using Super::getRemoteAddress;
 
-    /* Send or buffer a WebSocket frame, compressed or not. Returns false on increased user space backpressure. */
-    bool send(std::string_view message, uWS::OpCode opCode = uWS::OpCode::BINARY, bool compress = false) {
-        /* Transform the message to compressed domain if requested */
-        if (compress) {
-            WebSocketData *webSocketData = (WebSocketData *) Super::getAsyncSocketData();
+        /* Simple, immediate close of the socket. Emits close event */
+        using Super::close;
 
-            /* Check and correct the compress hint */
-            if (opCode < 3 && webSocketData->compressionStatus == WebSocketData::ENABLED) {
-                LoopData *loopData = Super::getLoopData();
-                /* Compress using either shared or dedicated deflationStream */
-                if (webSocketData->deflationStream) {
-                    message = webSocketData->deflationStream->deflate(loopData->zlibContext, message, false);
-                } else {
-                    message = loopData->deflationStream->deflate(loopData->zlibContext, message, true);
+        /* Send or buffer a WebSocket frame, compressed or not. Returns false on increased user space backpressure. */
+        bool send(std::string_view message, uWS::OpCode opCode = uWS::OpCode::BINARY, bool compress = false)
+        {
+            /* Transform the message to compressed domain if requested */
+            if (compress)
+            {
+                WebSocketData *webSocketData = (WebSocketData *)Super::getAsyncSocketData();
+
+                /* Check and correct the compress hint */
+                if (opCode < 3 && webSocketData->compressionStatus == WebSocketData::ENABLED)
+                {
+                    LoopData *loopData = Super::getLoopData();
+                    /* Compress using either shared or dedicated deflationStream */
+                    if (webSocketData->deflationStream)
+                    {
+                        message = webSocketData->deflationStream->deflate(loopData->zlibContext, message, false);
+                    }
+                    else
+                    {
+                        message = loopData->deflationStream->deflate(loopData->zlibContext, message, true);
+                    }
                 }
-            } else {
-                compress = false;
+                else
+                {
+                    compress = false;
+                }
             }
-        }
 
-        /* Check to see if we can cork for the user */
-        bool automaticallyCorked = false;
-        if (!Super::isCorked() && Super::canCork()) {
-            automaticallyCorked = true;
-            Super::cork();
-        }
-
-        /* Get size, alloate size, write if needed */
-        size_t messageFrameSize = protocol::messageFrameSize(message.length());
-        auto[sendBuffer, requiresWrite] = Super::getSendBuffer(messageFrameSize);
-        protocol::formatMessage<isServer>(sendBuffer, message.data(), message.length(), opCode, message.length(), compress);
-        /* This is the slow path, when we couldn't cork for the user */
-        if (requiresWrite) {
-            auto[written, failed] = Super::write(sendBuffer, (int) messageFrameSize);
-
-            /* For now, we are slow here */
-            free(sendBuffer);
-
-            if (failed) {
-                /* Return false for failure, skipping to reset the timeout below */
-                return false;
+            /* Check to see if we can cork for the user */
+            bool automaticallyCorked = false;
+            if (!Super::isCorked() && Super::canCork())
+            {
+                automaticallyCorked = true;
+                Super::cork();
             }
-        }
 
-        /* Uncork here if we automatically corked for the user */
-        if (automaticallyCorked) {
-            auto [written, failed] = Super::uncork();
-            if (failed) {
-                return false;
+            /* Get size, alloate size, write if needed */
+            size_t messageFrameSize = protocol::messageFrameSize(message.length());
+            auto [sendBuffer, requiresWrite] = Super::getSendBuffer(messageFrameSize);
+            protocol::formatMessage<isServer>(sendBuffer, message.data(), message.length(), opCode, message.length(), compress);
+            /* This is the slow path, when we couldn't cork for the user */
+            if (requiresWrite)
+            {
+                auto [written, failed] = Super::write(sendBuffer, (int)messageFrameSize);
+
+                /* For now, we are slow here */
+                free(sendBuffer);
+
+                if (failed)
+                {
+                    /* Return false for failure, skipping to reset the timeout below */
+                    return false;
+                }
             }
+
+            /* Uncork here if we automatically corked for the user */
+            if (automaticallyCorked)
+            {
+                auto [written, failed] = Super::uncork();
+                if (failed)
+                {
+                    return false;
+                }
+            }
+
+            /* Every successful send resets the timeout */
+            WebSocketContextData<SSL> *webSocketContextData = (WebSocketContextData<SSL> *)us_socket_context_ext(SSL,
+                                                                                                                 (us_socket_context_t *)us_socket_context(SSL, (us_socket_t *)this));
+            AsyncSocket<SSL>::timeout(webSocketContextData->idleTimeout);
+
+            /* Return success */
+            return true;
         }
 
-        /* Every successful send resets the timeout */
-        WebSocketContextData<SSL> *webSocketContextData = (WebSocketContextData<SSL> *) us_socket_context_ext(SSL,
-            (us_socket_context_t *) us_socket_context(SSL, (us_socket_t *) this)
-        );
-        AsyncSocket<SSL>::timeout(webSocketContextData->idleTimeout);
+        /* Send websocket close frame, emit close event, send FIN if successful */
+        void end(int code, std::string_view message = {})
+        {
+            /* Check if we already called this one */
+            WebSocketData *webSocketData = (WebSocketData *)us_socket_ext(SSL, (us_socket_t *)this);
+            if (webSocketData->isShuttingDown)
+            {
+                return;
+            }
 
-        /* Return success */
-        return true;
-    }
+            /* We postpone any FIN sending to either drainage or uncorking */
+            webSocketData->isShuttingDown = true;
 
-    /* Send websocket close frame, emit close event, send FIN if successful */
-    void end(int code, std::string_view message = {}) {
-        /* Check if we already called this one */
-        WebSocketData *webSocketData = (WebSocketData *) us_socket_ext(SSL, (us_socket_t *) this);
-        if (webSocketData->isShuttingDown) {
-            return;
-        }
+            /* Format and send the close frame */
+            static const int MAX_CLOSE_PAYLOAD = 123;
+            int length = (int)std::min<size_t>(MAX_CLOSE_PAYLOAD, message.length());
+            char closePayload[MAX_CLOSE_PAYLOAD + 2];
+            int closePayloadLength = (int)protocol::formatClosePayload(closePayload, (uint16_t)code, message.data(), length);
+            bool ok = send(std::string_view(closePayload, closePayloadLength), OpCode::CLOSE);
 
-        /* We postpone any FIN sending to either drainage or uncorking */
-        webSocketData->isShuttingDown = true;
-
-        /* Format and send the close frame */
-        static const int MAX_CLOSE_PAYLOAD = 123;
-        int length = (int) std::min<size_t>(MAX_CLOSE_PAYLOAD, message.length());
-        char closePayload[MAX_CLOSE_PAYLOAD + 2];
-        int closePayloadLength = (int) protocol::formatClosePayload(closePayload, (uint16_t) code, message.data(), length);
-        bool ok = send(std::string_view(closePayload, closePayloadLength), OpCode::CLOSE);
-
-        /* FIN if we are ok and not corked */
-        WebSocket<SSL, true> *webSocket = (WebSocket<SSL, true> *) this;
-        if (!webSocket->isCorked()) {
-            if (ok) {
-                /* If we are not corked, and we just sent off everything, we need to FIN right here.
+            /* FIN if we are ok and not corked */
+            WebSocket<SSL, true> *webSocket = (WebSocket<SSL, true> *)this;
+            if (!webSocket->isCorked())
+            {
+                if (ok)
+                {
+                    /* If we are not corked, and we just sent off everything, we need to FIN right here.
                  * In all other cases, we need to fin either if uncork was successful, or when drainage is complete. */
-                webSocket->shutdown();
+                    webSocket->shutdown();
+                }
+            }
+
+            /* Emit close event */
+            WebSocketContextData<SSL> *webSocketContextData = (WebSocketContextData<SSL> *)us_socket_context_ext(SSL,
+                                                                                                                 (us_socket_context_t *)us_socket_context(SSL, (us_socket_t *)this));
+            if (webSocketContextData->closeHandler)
+            {
+                webSocketContextData->closeHandler(this, code, message);
+            }
+
+            /* Make sure to unsubscribe from any pub/sub node at exit */
+            webSocketContextData->topicTree.unsubscribeAll(webSocketData->subscriber);
+            delete webSocketData->subscriber;
+            webSocketData->subscriber = nullptr;
+        }
+
+        /* Corks the response if possible. Leaves already corked socket be. */
+        void cork(fu2::unique_function<void()> &&handler)
+        {
+            if (!Super::isCorked() && Super::canCork())
+            {
+                Super::cork();
+                handler();
+
+                /* There is no timeout when failing to uncork for WebSockets,
+             * as that is handled by idleTimeout */
+                auto [written, failed] = Super::uncork();
+            }
+            else
+            {
+                /* We are already corked, or can't cork so let's just call the handler */
+                handler();
             }
         }
 
-        /* Emit close event */
-        WebSocketContextData<SSL> *webSocketContextData = (WebSocketContextData<SSL> *) us_socket_context_ext(SSL,
-            (us_socket_context_t *) us_socket_context(SSL, (us_socket_t *) this)
-        );
-        if (webSocketContextData->closeHandler) {
-            webSocketContextData->closeHandler(this, code, message);
+        /* Subscribe to a topic according to MQTT rules and syntax */
+        void subscribe(std::string_view topic)
+        {
+            WebSocketContextData<SSL> *webSocketContextData = (WebSocketContextData<SSL> *)us_socket_context_ext(SSL,
+                                                                                                                 (us_socket_context_t *)us_socket_context(SSL, (us_socket_t *)this));
+
+            /* Make us a subscriber if we aren't yet */
+            WebSocketData *webSocketData = (WebSocketData *)us_socket_ext(SSL, (us_socket_t *)this);
+            if (!webSocketData->subscriber)
+            {
+                webSocketData->subscriber = new Subscriber(this);
+            }
+
+            webSocketContextData->topicTree.subscribe(topic, webSocketData->subscriber);
         }
 
-        /* Make sure to unsubscribe from any pub/sub node at exit */
-        webSocketContextData->topicTree.unsubscribeAll(webSocketData->subscriber);
-        delete webSocketData->subscriber;
-        webSocketData->subscriber = nullptr;
-    }
+        /* Unsubscribe from a topic, returns true if we were subscribed */
+        bool unsubscribe(std::string_view topic)
+        {
+            WebSocketContextData<SSL> *webSocketContextData = (WebSocketContextData<SSL> *)us_socket_context_ext(SSL,
+                                                                                                                 (us_socket_context_t *)us_socket_context(SSL, (us_socket_t *)this));
 
-    /* Corks the response if possible. Leaves already corked socket be. */
-    void cork(fu2::unique_function<void()> &&handler) {
-        if (!Super::isCorked() && Super::canCork()) {
-            Super::cork();
-            handler();
+            WebSocketData *webSocketData = (WebSocketData *)us_socket_ext(SSL, (us_socket_t *)this);
 
-            /* There is no timeout when failing to uncork for WebSockets,
-             * as that is handled by idleTimeout */
-            auto [written, failed] = Super::uncork();
-        } else {
-            /* We are already corked, or can't cork so let's just call the handler */
-            handler();
-        }
-    }
-
-    /* Subscribe to a topic according to MQTT rules and syntax */
-    void subscribe(std::string_view topic) {
-        WebSocketContextData<SSL> *webSocketContextData = (WebSocketContextData<SSL> *) us_socket_context_ext(SSL,
-            (us_socket_context_t *) us_socket_context(SSL, (us_socket_t *) this)
-        );
-
-        /* Make us a subscriber if we aren't yet */
-        WebSocketData *webSocketData = (WebSocketData *) us_socket_ext(SSL, (us_socket_t *) this);
-        if (!webSocketData->subscriber) {
-            webSocketData->subscriber = new Subscriber(this);
+            return webSocketContextData->topicTree.unsubscribe(topic, webSocketData->subscriber);
         }
 
-        webSocketContextData->topicTree.subscribe(topic, webSocketData->subscriber);
-    }
+        /* Unsubscribe from all topics you might be subscribed to */
+        void unsubscribeAll()
+        {
+            WebSocketContextData<SSL> *webSocketContextData = (WebSocketContextData<SSL> *)us_socket_context_ext(SSL,
+                                                                                                                 (us_socket_context_t *)us_socket_context(SSL, (us_socket_t *)this));
 
-    /* Unsubscribe from a topic, returns true if we were subscribed */
-    bool unsubscribe(std::string_view topic) {
-        WebSocketContextData<SSL> *webSocketContextData = (WebSocketContextData<SSL> *) us_socket_context_ext(SSL,
-            (us_socket_context_t *) us_socket_context(SSL, (us_socket_t *) this)
-        );
+            WebSocketData *webSocketData = (WebSocketData *)us_socket_ext(SSL, (us_socket_t *)this);
 
-        WebSocketData *webSocketData = (WebSocketData *) us_socket_ext(SSL, (us_socket_t *) this);
+            webSocketContextData->topicTree.unsubscribeAll(webSocketData->subscriber);
+        }
 
-        return webSocketContextData->topicTree.unsubscribe(topic, webSocketData->subscriber);
-    }
+        /* Publish a message to a topic according to MQTT rules and syntax */
+        void publish(std::string_view topic, std::string_view message, OpCode opCode = OpCode::TEXT, bool compress = false)
+        {
+            WebSocketContextData<SSL> *webSocketContextData = (WebSocketContextData<SSL> *)us_socket_context_ext(SSL,
+                                                                                                                 (us_socket_context_t *)us_socket_context(SSL, (us_socket_t *)this));
+            /* Is the same as publishing per websocket context */
+            webSocketContextData->publish(topic, message, opCode, compress);
+        }
 
-    /* Unsubscribe from all topics you might be subscribed to */
-    void unsubscribeAll() {
-        WebSocketContextData<SSL> *webSocketContextData = (WebSocketContextData<SSL> *) us_socket_context_ext(SSL,
-            (us_socket_context_t *) us_socket_context(SSL, (us_socket_t *) this)
-        );
+        //
+        //
+        //
+        //
+        /*add by  henry   us_socket_context */
+        // fu2::unique_function<void(WebSocket<SSL, true> *, std::string_view, uWS::OpCode)> messageHandler = nullptr;
+        void InitCallbackMessageHandler(fu2::unique_function<void(WebSocket<SSL, true> *, std::string_view, uWS::OpCode)> callback)
+        {
+            printf("[WebSocket.h] InitCallbackMessageHandler: \r\n");
+            WebSocketContextData<SSL> *webSocketContextData = (WebSocketContextData<SSL> *)us_socket_context_ext(SSL, (us_socket_context_t *)us_socket_context(SSL, (us_socket_t *)this));
+            webSocketContextData->messageHandler = std::move(callback);
+        }
 
-        WebSocketData *webSocketData = (WebSocketData *) us_socket_ext(SSL, (us_socket_t *) this);
+        // fu2::unique_function<void(WebSocket<SSL, true> *)> drainHandler = nullptr;
+        void InitCallbackDrainHandler(fu2::unique_function<void(WebSocket<SSL, true> *)> callback)
+        {
+            printf("[WebSocket.h] InitCallbackDrainHandler: \r\n");
+            WebSocketContextData<SSL> *webSocketContextData = (WebSocketContextData<SSL> *)us_socket_context_ext(SSL, (us_socket_context_t *)us_socket_context(SSL, (us_socket_t *)this));
+            webSocketContextData->drainHandler = std::move(callback);
+        }
+        // fu2::unique_function<void(WebSocket<SSL, true> *, int, std::string_view)> closeHandler = nullptr;
+        void InitCallbackCloseHandler(fu2::unique_function<void(WebSocket<SSL, true> *, int, std::string_view)> callback)
+        {
+            printf("[WebSocket.h] InitCallbackCloseHandler: \r\n");
+            WebSocketContextData<SSL> *webSocketContextData = (WebSocketContextData<SSL> *)us_socket_context_ext(SSL, (us_socket_context_t *)us_socket_context(SSL, (us_socket_t *)this));
+            webSocketContextData->closeHandler = std::move(callback);
+        }
+        //
 
-        webSocketContextData->topicTree.unsubscribeAll(webSocketData->subscriber);
-    }
-
-    /* Publish a message to a topic according to MQTT rules and syntax */
-    void publish(std::string_view topic, std::string_view message, OpCode opCode = OpCode::TEXT, bool compress = false) {
-        WebSocketContextData<SSL> *webSocketContextData = (WebSocketContextData<SSL> *) us_socket_context_ext(SSL,
-            (us_socket_context_t *) us_socket_context(SSL, (us_socket_t *) this)
-        );
-        /* Is the same as publishing per websocket context */
-        webSocketContextData->publish(topic, message, opCode, compress);
-    }
-};
-
-}
+        // /* Todo: these should take message also; breaking change for v0.18 */
+        // fu2::unique_function<void(WebSocket<SSL, true> *)> pingHandler = nullptr;
+        void InitCallbackPingHandler(fu2::unique_function<void(WebSocket<SSL, true> *)> callback)
+        {
+            printf("[WebSocket.h] InitCallbackPingHandler: \r\n");
+            WebSocketContextData<SSL> *webSocketContextData = (WebSocketContextData<SSL> *)us_socket_context_ext(SSL, (us_socket_context_t *)us_socket_context(SSL, (us_socket_t *)this));
+            webSocketContextData->pingHandler = std::move(callback);
+        }
+        //
+        // fu2::unique_function<void(WebSocket<SSL, true> *)> pongHandler = nullptr;
+        void InitCallbackPongHandler(fu2::unique_function<void(WebSocket<SSL, true> *)> callback)
+        {
+            printf("[WebSocket.h] InitCallbackPongHandler: \r\n");
+            WebSocketContextData<SSL> *webSocketContextData = (WebSocketContextData<SSL> *)us_socket_context_ext(SSL, (us_socket_context_t *)us_socket_context(SSL, (us_socket_t *)this));
+            webSocketContextData->pongHandler = std::move(callback);
+        }
+    };
+} // namespace uWS
 
 #endif // UWS_WEBSOCKET_H

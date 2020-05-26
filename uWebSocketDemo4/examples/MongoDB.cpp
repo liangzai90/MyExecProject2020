@@ -45,16 +45,23 @@ void CMongoDB::createMonoInstance()
     CMongoDB::bMgInstance = true;
 }
 
+void CMongoDB::printMillisecond(const char* tag)
+{
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    cout <<tag<<":--------------:"<< tv.tv_sec*1000 + tv.tv_usec/1000 <<endl;
+}
+
 void CMongoDB::MongoTest()
 {
     cout << "CMongoDB::MongoTest()" << endl;
     mongocxx::client client{mongocxx::uri{}};
-    mongocxx::database db = client["mydb202005"];
+    mongocxx::database db = client[CMongoDB::mgInfo.szDbName];
     // Query for all the documents in a collection.
     {
         // @begin: cpp-query-all
         cout << "find() userlist ------------->>>Start" << endl;
-        auto cursor = db["userlist"].find(make_document(kvp("username", "henry666")));
+        auto cursor = db[CMongoDB::mgInfo.szColName].find(make_document(kvp("username", "henry666")));
 
         auto count = std::distance(cursor.begin(), cursor.end());
         cout << "count:" << count << endl;
@@ -91,7 +98,7 @@ void CMongoDB::MongoTest()
         opts.upsert(true);                                                 //如果没有，插入新的
         opts.return_document(mongocxx::options::return_document::k_after); //返回更新后的文档
 
-        auto doc = db["userlist"].find_one_and_update(
+        auto doc = db[CMongoDB::mgInfo.szColName].find_one_and_update(
             make_document(kvp("username", "henry5")),
             make_document(kvp("$inc", make_document(kvp("userid", 1)))),
             opts);
@@ -128,7 +135,7 @@ void CMongoDB::MongoTest()
     {
         cout << "update_one() userlist ------------" << endl;
         // @begin: cpp-update-top-level-fields
-        db["userlist"].update_one(
+        db[CMongoDB::mgInfo.szColName].update_one(
             make_document(kvp("username", "henry1")),
             make_document(kvp("$set", make_document(kvp("password", "666")))));
         // @end: cpp-update-top-level-fields
@@ -138,9 +145,9 @@ void CMongoDB::MongoTest()
 void CMongoDB::SetMongoInfo(MongoInfoDef &_mgInfo)
 {
     memset(&(CMongoDB::mgInfo), 0, sizeof(CMongoDB::mgInfo));
-    snprintf(CMongoDB::mgInfo.szUrl, sizeof(CMongoDB::mgInfo.szUrl), mgInfo.szUrl);
-    snprintf(CMongoDB::mgInfo.szDbName, sizeof(CMongoDB::mgInfo.szDbName), mgInfo.szDbName);
-    snprintf(CMongoDB::mgInfo.szColName, sizeof(CMongoDB::mgInfo.szColName), mgInfo.szColName);
+    snprintf(CMongoDB::mgInfo.szUrl, sizeof(CMongoDB::mgInfo.szUrl), _mgInfo.szUrl);
+    snprintf(CMongoDB::mgInfo.szDbName, sizeof(CMongoDB::mgInfo.szDbName), _mgInfo.szDbName);
+    snprintf(CMongoDB::mgInfo.szColName, sizeof(CMongoDB::mgInfo.szColName), _mgInfo.szColName);
     if (!CMongoDB::bMgInstance)
     {
         cout << "createMonoInstance  ----11111 " << endl;
@@ -152,16 +159,16 @@ void CMongoDB::SetMongoInfo(MongoInfoDef &_mgInfo)
     }
 }
 
-bool CMongoDB::userRegister(const LogInParaDef &loginPara, RetLoginDef &retData)
+bool CMongoDB::userRegister(LogInParaDef &loginPara, RetLoginDef &retData)
 {
     cout << "CMongoDB::userRegister" << endl;
     bool bSuccess = true;
     mongocxx::client client{mongocxx::uri{}};
-    mongocxx::database db = client["mydb202005"];
+    mongocxx::database db = client[CMongoDB::mgInfo.szDbName];
 
     cout << "find() userlist ------------->>>Start" << endl;
     //TODO:STEP1:find info if exist
-    auto cursor = db["userlist"].find(make_document(kvp("username", loginPara.szUserName)));
+    auto cursor = db[CMongoDB::mgInfo.szColName].find(make_document(kvp("username", loginPara.szUserName)));
     auto count = std::distance(cursor.begin(), cursor.end());
     if (count != 0L)
     {
@@ -180,7 +187,7 @@ bool CMongoDB::userRegister(const LogInParaDef &loginPara, RetLoginDef &retData)
         mongocxx::options::find_one_and_update opts;                       //返回类型设置
         opts.upsert(true);                                                 //如果没有，插入新的
         opts.return_document(mongocxx::options::return_document::k_after); //返回更新后的文档
-        auto doc = db["userlist"].find_one_and_update(
+        auto doc = db[CMongoDB::mgInfo.szColName].find_one_and_update(
             make_document(kvp("INCREASE_KEY", "henry2020")),
             make_document(kvp("$inc", make_document(kvp("USER_COUNT", 1)))),
             opts);
@@ -195,7 +202,7 @@ bool CMongoDB::userRegister(const LogInParaDef &loginPara, RetLoginDef &retData)
             snprintf(retData.msg, sizeof(retData.msg), "注册成功");
 
             //TODO:STEP3:insert one user info
-            mongocxx::collection coll = db["userlist"];
+            mongocxx::collection coll = db[CMongoDB::mgInfo.szColName];
             bsoncxx::document::value oneUser = make_document(
                 kvp("username", loginPara.szUserName),
                 kvp("password", loginPara.szPwd),
@@ -229,15 +236,15 @@ bool CMongoDB::userRegister(const LogInParaDef &loginPara, RetLoginDef &retData)
     return bSuccess;
 }
 
-bool CMongoDB::userLogin(const LogInParaDef &loginPara, RetLoginDef &retData)
+bool CMongoDB::userLogin(LogInParaDef &loginPara, RetLoginDef &retData)
 {
     bool bSuccess = true;
     retData.iMsgID = ID_S2C_LOGIN;
     snprintf(retData.szUserName, sizeof(retData.szUserName), loginPara.szUserName);
     mongocxx::client client{mongocxx::uri{}};
-    mongocxx::database db = client["mydb202005"];
+    mongocxx::database db = client[CMongoDB::mgInfo.szDbName];
     //TODO:STEP1:find info if exist
-    auto cursor = db["userlist"].find(make_document(kvp("username", loginPara.szUserName)));
+    auto cursor = db[CMongoDB::mgInfo.szColName].find(make_document(kvp("username", loginPara.szUserName)));
 
     //TODO:[error]用了distance，容器就变为空了
     //    auto count = std::distance(cursor.begin(), cursor.end());

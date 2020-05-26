@@ -64,4 +64,8 @@ typedef struct tagUserInfo
     int iUserId;                  //玩家id
 }UserInfoDef;
 
+
+
+
+
 #endif

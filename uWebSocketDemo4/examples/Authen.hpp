@@ -3,6 +3,15 @@
 #include "stdafx.h"
 #include "MongoDB.hpp"
 #include "json/json.h"
+
+#include <future>
+#include <thread>
+#include <chrono>
+#include <random>
+#include <iostream>
+#include <exception>
+using namespace std;
+
 //解析客户端连接请求里面的参数
 void GetUserLoginPara(const char *szQuery, LogInParaDef &loginPara)
 {
@@ -24,23 +33,41 @@ inline void HandleUserRAndL(LogInParaDef &loginPara, RetLoginDef &retData)
     RetLoginDef retLogin = {0};
     memset(&retData, 0, sizeof(retData));
 
+    CMongoDB::printMillisecond("TIMER1");
+
     //register
     if (ID_C2S_REGISTER == loginPara.iAct)
     {
         cout << "[Authen] Register user: " << loginPara.szUserName << endl;
-        CMongoDB::userRegister(loginPara, retData);
+
+        CMongoDB::printMillisecond("TIMER2");
+
+        auto result1(std::async(CMongoDB::userRegister, std::ref(loginPara), std::ref(retData)));
+        bool bResult1 = result1.get();
+        cout << "[Authen] Register bResult1: " << bResult1 << endl;
+
+        CMongoDB::printMillisecond("TIMER3");
     }
     //login
     else if (ID_C2S_LOGIN == loginPara.iAct)
     {
         cout << "[Authen] Login user: " << loginPara.szUserName << endl;
-        CMongoDB::userLogin(loginPara, retData);
+
+        CMongoDB::printMillisecond("TIMER4");
+
+        auto result2(std::async(CMongoDB::userLogin, std::ref(loginPara), std::ref(retData)));
+        bool bResult2 = result2.get();
+        cout << "[Authen] Login bResult2: " << bResult2 << endl;
+
+        CMongoDB::printMillisecond("TIMER5");
     }
     else
     {
         cout << "[Authen]  UNKNOW  MESSAGE "
              << " iAct:" << loginPara.iAct << ",name:" << loginPara.szUserName << ", pwd:" << loginPara.szPwd << endl;
     }
+
+    CMongoDB::printMillisecond("TIMER6");
 }
 
 void rspClientLogin(auto *ws, RetLoginDef &retData)
@@ -61,8 +88,7 @@ void rspClientLogin(auto *ws, RetLoginDef &retData)
     std::string document = Json::writeString(wbuilder, sendObjVal);
     ws->send(document, uWS::OpCode::TEXT);
 
-    
-    if(0 != retData.iState)
+    if (0 != retData.iState)
     {
         ws->end(retData.iState, retData.msg);
     }

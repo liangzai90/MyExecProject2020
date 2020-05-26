@@ -35,12 +35,13 @@ class CMongoDB
 public:
     static void SetMongoInfo(MongoInfoDef &_mgInfo);
 
-    static bool userRegister(const LogInParaDef &loginPara, RetLoginDef &retData);
+    static bool userRegister(LogInParaDef &loginPara, RetLoginDef &retData);
 
-    static bool userLogin(const LogInParaDef &loginPara, RetLoginDef &retData);
+    static bool userLogin(LogInParaDef &loginPara, RetLoginDef &retData);
 
     static void MongoTest();
 
+    static void printMillisecond(const char* tag);
 private:
     static void createMonoInstance();
     static MongoInfoDef mgInfo;
